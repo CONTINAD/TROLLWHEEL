@@ -46,6 +46,16 @@ async function main() {
     logger.info("RESET_STATE=1 — wiped all persisted state. Unset this env var now or it will wipe again on every boot.");
   }
 
+  // Manual top-up: set TOPUP_POOL_LAMPORTS=<lamports> to add SOL to the bot's
+  // spendable pool (e.g. 500_000_000 = 0.5 SOL). Applied idempotently — same
+  // value won't apply twice. To top up again, change the value.
+  {
+    const topup = tracker.applyPoolTopup(process.env.TOPUP_POOL_LAMPORTS);
+    if (topup.applied) {
+      logger.info(`TOPUP_POOL_LAMPORTS applied: +${topup.lamports} lamports (${(topup.lamports/1e9).toFixed(4)} SOL) added to claim pool.`);
+    }
+  }
+
   // Resolve $TROLLWHEEL mint: use env value if set, else cached value from
   // state.json (so we don't re-detect on restart), else watch on chain.
   let wheelMintStr = config.trollwheelMint;

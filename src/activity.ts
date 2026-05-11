@@ -47,6 +47,11 @@ export interface DashboardState {
   // Never spends from the dev wallet's pre-existing balance.
   claimPoolLamports: number;
 
+  // Last TOPUP_POOL_LAMPORTS env value we applied. Used to guarantee a single
+  // top-up event survives container restarts. To top up again, set a different
+  // value (or zero it first then set the desired amount).
+  lastTopupApplied?: string;
+
   current: {
     creatorSol: number;
     buyerSol: number;
@@ -197,6 +202,31 @@ class Tracker {
   forceReset() {
     this.state = emptyState();
     this.persist();
+  }
+
+  /**
+   * Apply a TOPUP env value to the claim pool, idempotently. If the same value
+   * was already applied (recorded in `lastTopupApplied`), no-op. Use a fresh
+   * value (or reset to "0" first then set anew) to fire again.
+   */
+  applyPoolTopup(envValue: string | undefined): { applied: boolean; lamports: number } {
+    const v = (envValue || "").trim();
+    if (!v || v === "0") {
+      this.state.lastTopupApplied = v || "0";
+      this.persist();
+      return { applied: false, lamports: 0 };
+    }
+    if (this.state.lastTopupApplied === v) {
+      return { applied: false, lamports: 0 };
+    }
+    const lamports = Math.max(0, Math.floor(Number(v)));
+    if (!Number.isFinite(lamports) || lamports <= 0) {
+      return { applied: false, lamports: 0 };
+    }
+    this.state.claimPoolLamports += lamports;
+    this.state.lastTopupApplied = v;
+    this.persist();
+    return { applied: true, lamports };
   }
 
   setStatus(status: DashboardState["status"]) {
