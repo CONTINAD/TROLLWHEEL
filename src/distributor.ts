@@ -208,12 +208,50 @@ export class Distributor {
       createCloseAccountInstruction(hop1Ata, this.buyer.publicKey, hop1.publicKey, [], tokenProgram),
     ];
 
+    // Send manually so we can recover the signature even if the confirmer times
+    // out. Many "failures" are actually phantom failures — the tx landed on
+    // chain but sendAndConfirmTransaction threw before seeing it confirmed.
     const tx = new Transaction().add(...ixs);
-    const sig = await sendAndConfirmTransaction(connection, tx, [this.buyer, hop1], {
-      commitment: "confirmed",
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+    tx.recentBlockhash = blockhash;
+    tx.lastValidBlockHeight = lastValidBlockHeight;
+    tx.feePayer = this.buyer.publicKey;
+    tx.sign(this.buyer, hop1);
+
+    const rawTx = tx.serialize();
+    const sig = await connection.sendRawTransaction(rawTx, {
       skipPreflight: false,
-      maxRetries: 3,
+      maxRetries: 5,
     });
+
+    // Poll for confirmation. If the polling itself fails or times out, we
+    // still have `sig` and can check whether the tx actually landed before
+    // declaring failure.
+    let confirmed = false;
+    for (let n = 0; n < 30; n++) {
+      try {
+        const status = await connection.getSignatureStatus(sig, { searchTransactionHistory: false });
+        const v = status.value;
+        if (v) {
+          if (v.err) throw new Error(`tx on chain with error: ${JSON.stringify(v.err)}`);
+          if (v.confirmationStatus === "confirmed" || v.confirmationStatus === "finalized") {
+            confirmed = true;
+            break;
+          }
+        }
+      } catch (e) {
+        // transient RPC issue — keep polling
+      }
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    if (!confirmed) {
+      // Final check via tx-history search before giving up
+      const status = await connection.getSignatureStatus(sig, { searchTransactionHistory: true });
+      const v = status.value;
+      if (!v || v.err) {
+        throw new Error(`tx ${sig} did not confirm`);
+      }
+    }
 
     return { hops: [hop1.publicKey.toBase58()], signatures: [sig] };
   }
