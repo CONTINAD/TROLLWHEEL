@@ -111,8 +111,10 @@ export function renderHTML(): string {
     100% { box-shadow: 0 0 0 0 rgba(74,222,128,0); }
   }
   .nav { display: flex; gap: 4px; align-items: center; font-weight: 600; font-size: 13px; }
-  .nav a { color: #fff; text-decoration: none; opacity: .85; padding: 6px 12px; border-radius: 999px; transition: .15s; }
+  .nav a { color: #fff; text-decoration: none; opacity: .85; padding: 6px 12px; border-radius: 999px; transition: .15s; display: inline-flex; align-items: center; gap: 7px; }
   .nav a:hover { opacity: 1; background: rgba(255,255,255,.08); color: var(--accent); }
+  .nav .nav-x svg { transition: transform .2s; }
+  .nav .nav-x:hover svg { transform: scale(1.15); }
   .nav .sep { color: rgba(255,255,255,.3); padding: 0 4px; }
 
   /* hero */
@@ -335,11 +337,12 @@ export function renderHTML(): string {
         <span class="live"><span class="dot"></span> LIVE</span>
       </div>
       <div class="nav">
-        <a href="https://x.com" target="_blank" rel="noopener">X</a>
+        <a class="nav-x" href="https://x.com/i/communities/2005516643519086682" target="_blank" rel="noopener" aria-label="X Community">
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor"><path d="M18.244 2H21.5l-7.5 8.575L23 22h-6.844l-5.36-7.01L4.6 22H1.34l8.063-9.213L1 2h7.012l4.846 6.41L18.244 2Zm-1.2 18.2h1.86L7.05 3.7H5.06l11.984 16.5Z"/></svg>
+          <span>X COMMUNITY</span>
+        </a>
         <span class="sep">·</span>
         <a id="dexLink" href="https://dexscreener.com/solana" target="_blank" rel="noopener">DEXSCREENER</a>
-        <span class="sep">·</span>
-        <a id="solscanLink" href="https://solscan.io" target="_blank" rel="noopener">SOLSCAN</a>
       </div>
     </div>
 
@@ -512,7 +515,6 @@ async function refresh() {
     document.getElementById('caText').textContent = ca === '' ? 'awaiting token creation…' : ca;
     if (s.trollwheelMint) {
       document.getElementById('dexLink').href = 'https://dexscreener.com/solana/' + s.trollwheelMint;
-      document.getElementById('solscanLink').href = 'https://solscan.io/token/' + s.trollwheelMint;
     }
 
     // watch banner
