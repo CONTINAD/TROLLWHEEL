@@ -193,6 +193,12 @@ class Tracker {
     return false;
   }
 
+  /** Unconditionally wipe all persisted state. */
+  forceReset() {
+    this.state = emptyState();
+    this.persist();
+  }
+
   setStatus(status: DashboardState["status"]) {
     this.state.status = status;
     this.persist();

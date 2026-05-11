@@ -38,6 +38,14 @@ async function main() {
     logger.info("Creator wallet differs from persisted state — wiped dashboard counters for a fresh start.");
   }
 
+  // Manual override: set RESET_STATE=1 in env to force a wipe on next boot,
+  // then unset it. Useful when env vars were changed across multiple deploys
+  // and the wallet-changed detector missed the transition.
+  if (process.env.RESET_STATE === "1") {
+    tracker.forceReset();
+    logger.info("RESET_STATE=1 — wiped all persisted state. Unset this env var now or it will wipe again on every boot.");
+  }
+
   // Resolve $TROLLWHEEL mint: use env value if set, else cached value from
   // state.json (so we don't re-detect on restart), else watch on chain.
   let wheelMintStr = config.trollwheelMint;
