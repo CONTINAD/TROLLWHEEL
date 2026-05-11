@@ -303,11 +303,15 @@ export class Distributor {
       let sweepLamports = step.solSweepAmount;
       if (isHop && step.solSweepAmount > 0) {
         const liveBal = await connection.getBalance(fromOwner, "confirmed");
-        const TX_FEE_PAD = 5_500;
+        // Fee = 5000 base + (compute_price * compute_limit / 1e6). We set price
+        // = 1000 µLamports and limit = 200_000 CU above, so priority fee = 200,
+        // total = 5_200 exactly. End balance MUST be 0 (or >= 890_880 rent-exempt
+        // for a system account) — landing in between trips the rent-check rule.
+        const TX_FEE = 5_200;
         const ATA_RENT = 2_039_280;
         const newAtaRent = toAtaExists ? 0 : ATA_RENT;
         const closeRefund = step.closeOwnAta ? ATA_RENT : 0;
-        sweepLamports = Math.max(0, liveBal - TX_FEE_PAD - newAtaRent + closeRefund);
+        sweepLamports = Math.max(0, liveBal - TX_FEE - newAtaRent + closeRefund);
       }
 
       if (sweepLamports > 0) {
