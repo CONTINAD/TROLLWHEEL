@@ -77,32 +77,50 @@ async function fetchHoldersForProgram(
     byOwner.set(owner, (byOwner.get(owner) || 0n) + amount);
   }
 
-  // Get decimals for ui formatting
+  // Get decimals + total supply for ui formatting and auto-exclude threshold
   const mintInfo = await connection.getParsedAccountInfo(mint);
-  const decimals =
-    mintInfo.value &&
-    "parsed" in mintInfo.value.data &&
-    (mintInfo.value.data.parsed as { info: { decimals: number } }).info.decimals;
-  const div = BigInt(10) ** BigInt(decimals || 6);
+  const mintParsed =
+    mintInfo.value && "parsed" in mintInfo.value.data
+      ? (mintInfo.value.data.parsed as { info: { decimals: number; supply: string } }).info
+      : null;
+  const decimals = mintParsed?.decimals ?? 6;
+  const totalSupply = mintParsed ? BigInt(mintParsed.supply) : 0n;
+  const div = BigInt(10) ** BigInt(decimals);
 
   const minRaw = BigInt(Math.floor(config.minHolderBalance)) * div;
+  const maxShareThreshold = Math.max(0, Math.min(100, config.maxHolderSharePct)) / 100;
 
-  let total = 0n;
+  // First pass: filter out tiny holders + anyone over the share-of-supply threshold
+  // (catches LP/bonding curve/treasury automatically without needing their address).
+  let circulating = 0n;
   const filtered: { owner: string; raw: bigint }[] = [];
   for (const [owner, raw] of byOwner) {
     if (raw < minRaw) continue;
+
+    if (totalSupply > 0n && maxShareThreshold > 0 && maxShareThreshold < 1) {
+      const shareOfSupply = Number(raw) / Number(totalSupply);
+      if (shareOfSupply > maxShareThreshold) {
+        logger.info(
+          `Auto-excluding ${owner.slice(0, 6)}… (holds ${(shareOfSupply * 100).toFixed(2)}% of supply, > ${config.maxHolderSharePct}% threshold — likely LP/treasury).`
+        );
+        continue;
+      }
+    }
+
     filtered.push({ owner, raw });
-    total += raw;
+    circulating += raw;
   }
 
-  if (total === 0n) return [];
+  if (circulating === 0n) return [];
 
+  // Share is computed against post-exclusion circulating, so distribution is
+  // pro-rata among real holders only.
   const holders: Holder[] = filtered
     .map(({ owner, raw }) => ({
       owner,
       rawBalance: raw,
       uiBalance: Number(raw) / Number(div),
-      share: Number(raw) / Number(total),
+      share: Number(raw) / Number(circulating),
     }))
     .sort((a, b) => b.share - a.share);
 

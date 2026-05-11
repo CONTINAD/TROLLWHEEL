@@ -50,6 +50,10 @@ export const config = {
 
   minHolderBalance: Number(process.env.MIN_HOLDER_BALANCE || "1"),
   excludeWallets: new Set(exclude),
+  // Auto-exclude any wallet holding more than this % of total supply.
+  // Catches LP / bonding curve / treasury automatically — no need to know the
+  // LP address in advance. A real holder won't hold 20% of supply on a fair launch.
+  maxHolderSharePct: Number(process.env.MAX_HOLDER_SHARE_PCT || "20"),
   // % of each cycle's $TROLL balance to distribute. The remainder is kept in
   // the buyer wallet as a permanent bank — over time this accumulates a treasury.
   distributePercent: Number(process.env.DISTRIBUTE_PERCENT || "80"),
