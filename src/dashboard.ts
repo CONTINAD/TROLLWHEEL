@@ -536,9 +536,11 @@ async function refresh() {
     document.getElementById('solClaimed').textContent = fmt(s.totals.solClaimed, 4);
     document.getElementById('solSpent').textContent  = fmt(s.totals.solSpent, 4) + ' SOL deployed into $TROLL';
 
-    // distributed
+    // distributed. "still held" uses the live on-chain wallet balance —
+    // the derived bought−distributed math can drift when a delivery lands on
+    // chain but its receipt isn't recorded (e.g. RPC confirmation timeout).
     document.getElementById('trollDistributed').textContent = fmtTok(s.totals.trollDistributed);
-    const stillHeld = Math.max(0, (s.totals.trollBought||0) - (s.totals.trollDistributed||0));
+    const stillHeld = Math.max(0, s.current && s.current.buyerTroll || 0);
     document.getElementById('trollBought').textContent =
       fmtTok(s.totals.trollBought) + ' bought · ' + fmtTok(stillHeld) + ' still held';
 
