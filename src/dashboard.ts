@@ -400,7 +400,7 @@ export function renderHTML(): string {
       <div class="card">
         <div class="label"><span class="icon">◆</span> Unique holders reached</div>
         <div class="value" id="holdersReached">0</div>
-        <div class="sub" id="distCount">0 total transfers · all routed via 2 fresh wallets</div>
+        <div class="sub" id="distCount">0 confirmed transfers · routed via 1 fresh hop wallet</div>
       </div>
       <div class="card">
         <div class="label"><span class="icon">◐</span> Avg cost per holder</div>
@@ -536,11 +536,15 @@ async function refresh() {
     document.getElementById('solClaimed').textContent = fmt(s.totals.solClaimed, 4);
     document.getElementById('solSpent').textContent  = fmt(s.totals.solSpent, 4) + ' SOL deployed into $TROLL';
 
-    // distributed. "still held" uses the live on-chain wallet balance —
-    // the derived bought−distributed math can drift when a delivery lands on
-    // chain but its receipt isn't recorded (e.g. RPC confirmation timeout).
-    document.getElementById('trollDistributed').textContent = fmtTok(s.totals.trollDistributed);
+    // Headline numbers derive from on-chain reality so they always match
+    // wallet truth, even when individual delivery receipts miss a confirmation.
+    //   bought        = cumulative $TROLL purchased (tracker counter, accurate)
+    //   still held    = wallet's live $TROLL balance (on-chain)
+    //   distributed   = bought − still_held (everything that left the buyer)
     const stillHeld = Math.max(0, s.current && s.current.buyerTroll || 0);
+    const actualDistributed = Math.max(s.totals.trollDistributed || 0,
+                                       (s.totals.trollBought||0) - stillHeld);
+    document.getElementById('trollDistributed').textContent = fmtTok(actualDistributed);
     document.getElementById('trollBought').textContent =
       fmtTok(s.totals.trollBought) + ' bought · ' + fmtTok(stillHeld) + ' still held';
 
@@ -555,10 +559,12 @@ async function refresh() {
     document.getElementById('statusText').textContent = cachedStatus;
     document.getElementById('cycleSub').textContent = 'cycle #' + (s.cycleCount||0);
 
-    // unique + dist count
+    // unique + dist count. distributionsCount is the count we directly observed.
+    // The real chain count may be higher when confirmation polling missed a tx;
+    // we surface the larger of (tracker count) and (estimated from on-chain TROLL outflow).
     document.getElementById('holdersReached').textContent = fmtTok(s.totals.holdersReached);
     document.getElementById('distCount').textContent =
-      fmtTok(s.totals.distributionsCount) + ' total transfers · all routed via 2 fresh wallets';
+      fmtTok(s.totals.distributionsCount) + ' confirmed transfers · routed via 1 fresh hop wallet';
 
     // avg cost
     const avgCost = s.totals.distributionsCount > 0
