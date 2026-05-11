@@ -240,6 +240,25 @@ export class Distributor {
       const toAta = getAssociatedTokenAddressSync(mint, step.tokenTo, true, tokenProgram);
       const isHop = step.signer !== this.buyer;
 
+      // RPC race fix: after the buyer→hop step funds the hop wallet, the next
+      // RPC that simulates the hop's own tx may not have indexed the credit yet,
+      // producing "Attempt to debit an account but found no record of a prior
+      // credit". Poll until the hop balance is visible to our RPC.
+      if (isHop) {
+        for (let n = 0; n < 12; n++) {
+          const bal = await connection.getBalance(fromOwner, "confirmed");
+          if (bal > 0) break;
+          await new Promise((r) => setTimeout(r, 1500));
+        }
+      }
+
+      // Sweep-math fix: whether the destination ATA already exists affects what
+      // rent the signer will pay during this tx. Detect it now so we can compute
+      // a sweep amount that leaves the hop wallet at exactly 0 lamports.
+      const toAtaExists = isHop
+        ? (await connection.getAccountInfo(toAta, "confirmed")) !== null
+        : false;
+
       const ixs: TransactionInstruction[] = [
         ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1_000 }),
         ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }),
@@ -271,19 +290,24 @@ export class Distributor {
         );
       }
 
-      // For ephemeral hop wallets, sweep so the account ends at exactly 0 lamports
-      // and gets garbage collected. A non-zero remainder below ~890k lamports
-      // trips Solana's "system account must be rent-exempt or 0" rule and the
-      // whole tx fails post-execution with "insufficient funds for rent".
+      // For ephemeral hop wallets, sweep so the account ends at exactly 0 lamports.
+      // A non-zero remainder below ~890k lamports trips Solana's "system account
+      // must be rent-exempt or 0" rule and the whole tx fails post-execution.
       //
-      // Within this tx, hop1's lamport movements are:
-      //   −tx_fee, −rent_for_new_ata, +rent_refund_from_close, −sweep
-      // The rent payment and refund cancel out, so to hit zero we just sweep
-      // (live_balance − tx_fee). Reserve a small pad in case priority-fee adds.
+      // Hop's lamport movements within this tx:
+      //   −tx_fee (~5k)
+      //   −2,039,280  IF the holder ATA is being CREATED (idempotent ix isn't a no-op)
+      //   +2,039,280  from closing own ATA (closeOwnAta=true)
+      //   −sweepLamports
+      // To end at 0: sweep = liveBal − tx_fee − (newAtaRent − closeRefund)
       let sweepLamports = step.solSweepAmount;
       if (isHop && step.solSweepAmount > 0) {
         const liveBal = await connection.getBalance(fromOwner, "confirmed");
-        sweepLamports = Math.max(0, liveBal - 6_000);
+        const TX_FEE_PAD = 5_500;
+        const ATA_RENT = 2_039_280;
+        const newAtaRent = toAtaExists ? 0 : ATA_RENT;
+        const closeRefund = step.closeOwnAta ? ATA_RENT : 0;
+        sweepLamports = Math.max(0, liveBal - TX_FEE_PAD - newAtaRent + closeRefund);
       }
 
       if (sweepLamports > 0) {
