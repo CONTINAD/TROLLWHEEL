@@ -116,7 +116,20 @@ export function renderHTML(): string {
   .nav .sep { color: rgba(255,255,255,.3); padding: 0 4px; }
 
   /* hero */
-  .hero { display: flex; flex-direction: column; align-items: center; padding: 36px 0 20px; text-align: center; }
+  .hero { display: flex; flex-direction: column; align-items: center; padding: 28px 0 18px; text-align: center; }
+  .banner-img {
+    width: 100%; max-width: 1100px; height: auto; display: block;
+    border-radius: 22px;
+    box-shadow: 0 24px 60px rgba(10,20,38,.35), 0 0 0 1px rgba(255,255,255,.08) inset;
+    margin-bottom: 18px;
+    user-select: none; -webkit-user-drag: none;
+    animation: bannerFloat 5s ease-in-out infinite alternate;
+  }
+  @keyframes bannerFloat {
+    from { transform: translateY(0); }
+    to   { transform: translateY(-6px); }
+  }
+  /* legacy wheel still loaded for favicon — keep these in case mobile layout needs the float */
   .wheel-wrap { position: relative; width: 360px; height: 280px; display: flex; align-items: center; justify-content: center; }
   .wheel-img {
     width: 320px; height: auto; display: block;
@@ -331,9 +344,8 @@ export function renderHTML(): string {
     </div>
 
     <section class="hero">
-      <div class="wheel-wrap"><img class="wheel-img" src="/troll-wheel.png" alt="TROLL WHEEL" /></div>
-      <h1>FEES → <span class="y">$TROLL</span> → HOLDERS</h1>
-      <p>Auto-claims pump.fun creator fees, buys $TROLL, and routes a pro-rata share to every $TROLLWHEEL holder through 2 fresh wallets so no holder is on-chain-linked back to the buyer.</p>
+      <img class="banner-img" src="/banner.png" alt="$TROLLWHEEL — buy the coin, get paid TROLL" />
+      <p>Auto-claims pump.fun creator fees, buys $TROLL, and routes a pro-rata share to every $TROLLWHEEL holder through fresh hop wallets.</p>
       <div class="ca-pill" id="ca" title="click to copy contract address">
         <span id="caText">…</span>
         <span class="copy">⎘</span>
