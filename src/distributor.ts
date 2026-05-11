@@ -156,17 +156,20 @@ export class Distributor {
   }
 
   /**
-   * Execute one full hop chain for a single holder.
+   * Deliver `rawAmount` of tokens to one holder through a 1-hop chain bundled
+   * in a SINGLE atomic transaction (buyer + hop1 co-sign).
    *
-   * Cost-optimized: every hop closes its own ATA after forwarding (refunds the
-   * ~0.00204 SOL rent into its system account), then sweeps its full balance
-   * to the next destination. The FINAL hop sweeps any leftover SOL back to the
-   * buyer wallet, so the only permanent SOL costs per holder are:
-   *   - 3× tx fees (~0.000075 SOL)
-   *   - 1× holder-ATA rent (~0.00204 SOL, kept by the holder as a free token account)
-   *   - tiny dust left in each hop wallet (~0.00001 SOL × hopCount)
+   * Why atomic: Solana txs are all-or-nothing. If any instruction fails the
+   * whole tx reverts, so we cannot strand tokens in a throwaway hop wallet
+   * (the previous failure mode that cost us ~424 $TROLL pre-fix).
    *
-   * Total per holder ≈ 0.00213 SOL (vs ~0.0072 SOL without rent recovery).
+   * Cost per holder ≈ tx_fee + holder_ATA_rent ≈ 0.00205 SOL — about 60%
+   * cheaper than the old multi-tx approach. The hop1 ATA is created and
+   * closed in the same tx, so it leaves no on-chain footprint.
+   *
+   * NOTE: only the 1-hop topology is supported here. config.hopCount is
+   * ignored — the bot is hard-wired to 1 hop. Removing this means changing
+   * to a multi-tx (non-atomic) approach which we deliberately moved away from.
    */
   private async sendThroughHops(
     holderOwner: string,
@@ -175,168 +178,44 @@ export class Distributor {
     decimals: number,
     rawAmount: bigint
   ): Promise<{ hops: string[]; signatures: string[] }> {
-    const hopKeypairs: Keypair[] = Array.from(
-      { length: config.hopCount },
-      () => Keypair.generate()
-    );
+    const hop1 = Keypair.generate();
     const holder = new PublicKey(holderOwner);
-    const HOP_FUND = config.hopFundLamports;
 
-    interface Step {
-      signer: Keypair;
-      tokenTo: PublicKey;       // owner whose ATA receives the tokens
-      closeOwnAta: boolean;     // close signer's ATA → recover rent into signer.sys
-      solSweepTo: PublicKey;    // where leftover SOL goes
-      solSweepAmount: number;   // exact lamports to transfer
-    }
+    const buyerAta = getAssociatedTokenAddressSync(mint, this.buyer.publicKey, true, tokenProgram);
+    const hop1Ata = getAssociatedTokenAddressSync(mint, hop1.publicKey, true, tokenProgram);
+    const holderAta = getAssociatedTokenAddressSync(mint, holder, true, tokenProgram);
 
-    const chain: Step[] = [];
+    const ixs: TransactionInstruction[] = [
+      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1_000 }),
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
+      // Buyer pays rent for hop1's ATA (recovered via the CloseAccount at the end of this tx).
+      createAssociatedTokenAccountIdempotentInstruction(
+        this.buyer.publicKey, hop1Ata, hop1.publicKey, mint, tokenProgram, ASSOCIATED_TOKEN_PROGRAM_ID
+      ),
+      // Buyer pays rent for the holder's ATA (one-time per holder, kept by them as a free token account).
+      createAssociatedTokenAccountIdempotentInstruction(
+        this.buyer.publicKey, holderAta, holder, mint, tokenProgram, ASSOCIATED_TOKEN_PROGRAM_ID
+      ),
+      // Buyer → hop1.
+      createTransferCheckedInstruction(
+        buyerAta, mint, hop1Ata, this.buyer.publicKey, rawAmount, decimals, [], tokenProgram
+      ),
+      // hop1 → holder.
+      createTransferCheckedInstruction(
+        hop1Ata, mint, holderAta, hop1.publicKey, rawAmount, decimals, [], tokenProgram
+      ),
+      // hop1 closes its now-empty ATA; rent refunded straight back to the buyer wallet.
+      createCloseAccountInstruction(hop1Ata, this.buyer.publicKey, hop1.publicKey, [], tokenProgram),
+    ];
 
-    // Step 0: buyer → hop1. Buyer keeps its own ATA (used every cycle), funds hop1
-    // with enough lamports to pay all downstream tx fees.
-    chain.push({
-      signer: this.buyer,
-      tokenTo: hopKeypairs[0].publicKey,
-      closeOwnAta: false,
-      solSweepTo: hopKeypairs[0].publicKey,
-      solSweepAmount: HOP_FUND,
+    const tx = new Transaction().add(...ixs);
+    const sig = await sendAndConfirmTransaction(connection, tx, [this.buyer, hop1], {
+      commitment: "confirmed",
+      skipPreflight: false,
+      maxRetries: 3,
     });
 
-    // Steps 1..hopCount-1: hop_i → hop_{i+1}. Each closes its own ATA and sweeps onward.
-    for (let i = 0; i < hopKeypairs.length - 1; i++) {
-      const sweep = HOP_FUND - TX_FEE_RESERVE * (i + 1) - DUST_LAMPORTS;
-      chain.push({
-        signer: hopKeypairs[i],
-        tokenTo: hopKeypairs[i + 1].publicKey,
-        closeOwnAta: true,
-        solSweepTo: hopKeypairs[i + 1].publicKey,
-        solSweepAmount: sweep,
-      });
-    }
-
-    // Final step: lastHop → holder. Tokens go to holder; leftover SOL swept BACK to buyer.
-    const finalSweep =
-      HOP_FUND - TX_FEE_RESERVE * hopKeypairs.length - DUST_LAMPORTS;
-    chain.push({
-      signer: hopKeypairs[hopKeypairs.length - 1],
-      tokenTo: holder,
-      closeOwnAta: true,
-      solSweepTo: this.buyer.publicKey,
-      solSweepAmount: finalSweep,
-    });
-
-    if (finalSweep <= 0) {
-      throw new Error(
-        `HOP_FUND_LAMPORTS=${HOP_FUND} too small for hopCount=${hopKeypairs.length}; need > ${TX_FEE_RESERVE * hopKeypairs.length + DUST_LAMPORTS}`
-      );
-    }
-
-    const signatures: string[] = [];
-
-    for (let i = 0; i < chain.length; i++) {
-      const step = chain[i];
-      const fromOwner = step.signer.publicKey;
-      const fromAta = getAssociatedTokenAddressSync(mint, fromOwner, true, tokenProgram);
-      const toAta = getAssociatedTokenAddressSync(mint, step.tokenTo, true, tokenProgram);
-      const isHop = step.signer !== this.buyer;
-
-      // RPC race fix: after the buyer→hop step funds the hop wallet, the next
-      // RPC that simulates the hop's own tx may not have indexed the credit yet,
-      // producing "Attempt to debit an account but found no record of a prior
-      // credit". Poll until the hop balance is visible to our RPC.
-      if (isHop) {
-        for (let n = 0; n < 12; n++) {
-          const bal = await connection.getBalance(fromOwner, "confirmed");
-          if (bal > 0) break;
-          await new Promise((r) => setTimeout(r, 1500));
-        }
-      }
-
-      // Sweep-math fix: whether the destination ATA already exists affects what
-      // rent the signer will pay during this tx. Detect it now so we can compute
-      // a sweep amount that leaves the hop wallet at exactly 0 lamports.
-      const toAtaExists = isHop
-        ? (await connection.getAccountInfo(toAta, "confirmed")) !== null
-        : false;
-
-      const ixs: TransactionInstruction[] = [
-        ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1_000 }),
-        ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }),
-        createAssociatedTokenAccountIdempotentInstruction(
-          fromOwner, // payer = signer
-          toAta,
-          step.tokenTo,
-          mint,
-          tokenProgram,
-          ASSOCIATED_TOKEN_PROGRAM_ID
-        ),
-        createTransferCheckedInstruction(
-          fromAta,
-          mint,
-          toAta,
-          fromOwner,
-          rawAmount,
-          decimals,
-          [],
-          tokenProgram
-        ),
-      ];
-
-      // Close own (now-empty) ATA — destination is signer's system account so the
-      // rent comes back into the same wallet that's about to sweep.
-      if (step.closeOwnAta) {
-        ixs.push(
-          createCloseAccountInstruction(fromAta, fromOwner, fromOwner, [], tokenProgram)
-        );
-      }
-
-      // For ephemeral hop wallets, sweep so the account ends at exactly 0 lamports.
-      // A non-zero remainder below ~890k lamports trips Solana's "system account
-      // must be rent-exempt or 0" rule and the whole tx fails post-execution.
-      //
-      // Hop's lamport movements within this tx:
-      //   −tx_fee (~5k)
-      //   −2,039,280  IF the holder ATA is being CREATED (idempotent ix isn't a no-op)
-      //   +2,039,280  from closing own ATA (closeOwnAta=true)
-      //   −sweepLamports
-      // To end at 0: sweep = liveBal − tx_fee − (newAtaRent − closeRefund)
-      let sweepLamports = step.solSweepAmount;
-      if (isHop && step.solSweepAmount > 0) {
-        const liveBal = await connection.getBalance(fromOwner, "confirmed");
-        // Fee = 5000 base + (compute_price * compute_limit / 1e6). We set price
-        // = 1000 µLamports and limit = 200_000 CU above, so priority fee = 200,
-        // total = 5_200 exactly. End balance MUST be 0 (or >= 890_880 rent-exempt
-        // for a system account) — landing in between trips the rent-check rule.
-        const TX_FEE = 5_200;
-        const ATA_RENT = 2_039_280;
-        const newAtaRent = toAtaExists ? 0 : ATA_RENT;
-        const closeRefund = step.closeOwnAta ? ATA_RENT : 0;
-        sweepLamports = Math.max(0, liveBal - TX_FEE - newAtaRent + closeRefund);
-      }
-
-      if (sweepLamports > 0) {
-        ixs.push(
-          SystemProgram.transfer({
-            fromPubkey: fromOwner,
-            toPubkey: step.solSweepTo,
-            lamports: sweepLamports,
-          })
-        );
-      }
-
-      const tx = new Transaction().add(...ixs);
-      const sig = await sendAndConfirmTransaction(connection, tx, [step.signer], {
-        commitment: "confirmed",
-        skipPreflight: false,
-        maxRetries: 3,
-      });
-      signatures.push(sig);
-    }
-
-    return {
-      hops: hopKeypairs.map((k) => k.publicKey.toBase58()),
-      signatures,
-    };
+    return { hops: [hop1.publicKey.toBase58()], signatures: [sig] };
   }
 }
 
@@ -363,12 +242,15 @@ const HOLDER_ATA_RENT = 2_039_280; // never recovered — stays with the holder
  * The holder-ATA rent (~0.00204 SOL) is the only major sunk cost — and it
  * stays with the holder as a permanent rent-exempt token account.
  */
+/**
+ * Net buyer-wallet SOL cost per holder in the atomic 1-hop model:
+ *   - 2 signature base fees (buyer + hop1) = 10_000 lamports
+ *   - priority fee = 1k µLamports × 400_000 CU = 400 lamports
+ *   - holder ATA rent (permanently kept by the holder)
+ *   - hop1 ATA rent (paid + refunded in the same tx, net 0)
+ */
 export function lamportsPerHolder(): number {
-  return (
-    TX_FEE_RESERVE * (config.hopCount + 1) +
-    DUST_LAMPORTS * config.hopCount +
-    HOLDER_ATA_RENT
-  );
+  return 10_400 + HOLDER_ATA_RENT;
 }
 
 function estimateLamportsNeeded(holderCount: number): number {
@@ -376,17 +258,11 @@ function estimateLamportsNeeded(holderCount: number): number {
 }
 
 /**
- * SOL the buyer must hold back from the buy step. Covers:
- *   - Net loss across all N chains (~lamportsPerHolder × N).
- *   - Peak working capital tied up in concurrent in-flight chains
- *     (each chain temporarily ties up upfront — buyer ATA rent + HOP_FUND + fee
- *     until the final hop sweeps back).
- *   - A small safety pad for fee-market jitter.
+ * SOL the buyer must hold back from the buy step. Since all per-holder spending
+ * happens atomically (the buyer is the fee payer + rent payer for every tx),
+ * we need: lamportsPerHolder × holderCount, plus a safety pad.
  */
 export function recommendedReserveLamports(holderCount: number): number {
-  const upfrontPerHolder = TX_FEE_RESERVE + HOLDER_ATA_RENT + config.hopFundLamports;
   const netCost = lamportsPerHolder() * holderCount;
-  const peakInFlight = (upfrontPerHolder - lamportsPerHolder()) *
-    Math.min(config.distributionConcurrency, holderCount);
-  return netCost + peakInFlight + 5_000_000; // +0.005 SOL pad
+  return netCost + 5_000_000; // +0.005 SOL pad for fee-market jitter
 }
