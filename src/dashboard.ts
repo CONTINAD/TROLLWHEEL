@@ -19,8 +19,10 @@ export function startDashboard() {
     res.set("Content-Type", "text/html; charset=utf-8").send(renderHTML());
   });
 
-  app.listen(config.port, () => {
-    logger.info(`Dashboard listening on :${config.port}`);
+  // Bind 0.0.0.0 explicitly so Railway's HTTP proxy can reach us
+  // (Express's default is already 0.0.0.0, but be explicit for clarity).
+  app.listen(config.port, "0.0.0.0", () => {
+    logger.info(`Dashboard listening on 0.0.0.0:${config.port}`);
   });
 }
 
