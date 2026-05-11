@@ -175,6 +175,24 @@ class Tracker {
     this.persist();
   }
 
+  /**
+   * If the persisted creator wallet differs from the one we're booting with,
+   * the operator has switched wallets (e.g. test → real launch). Wipe every
+   * coin-specific bit of state so the dashboard counters start fresh for the
+   * new wallet/mint. Preserves nothing — totals, mint cache, holder records,
+   * events all reset.
+   */
+  resetIfWalletChanged(currentCreatorWallet: string): boolean {
+    const persisted = this.state.creatorWallet;
+    if (persisted && persisted !== currentCreatorWallet) {
+      const fresh = emptyState();
+      this.state = fresh;
+      this.persist();
+      return true;
+    }
+    return false;
+  }
+
   setStatus(status: DashboardState["status"]) {
     this.state.status = status;
     this.persist();

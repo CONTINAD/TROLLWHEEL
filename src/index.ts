@@ -32,6 +32,12 @@ async function main() {
   logger.info(`Cycle interval: ${config.cycleIntervalSeconds}s`);
   logger.info(`Spend cap:      ${config.buybackPercent}% of claimed fees`);
 
+  // If the creator wallet changed since last run, wipe all persisted coin
+  // state so the dashboard starts fresh (test→launch swap is the typical case).
+  if (tracker.resetIfWalletChanged(creator.publicKey.toBase58())) {
+    logger.info("Creator wallet differs from persisted state — wiped dashboard counters for a fresh start.");
+  }
+
   // Resolve $TROLLWHEEL mint: use env value if set, else cached value from
   // state.json (so we don't re-detect on restart), else watch on chain.
   let wheelMintStr = config.trollwheelMint;
