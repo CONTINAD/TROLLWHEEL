@@ -243,14 +243,15 @@ const HOLDER_ATA_RENT = 2_039_280; // never recovered — stays with the holder
  * stays with the holder as a permanent rent-exempt token account.
  */
 /**
- * Net buyer-wallet SOL cost per holder in the atomic 1-hop model:
- *   - 2 signature base fees (buyer + hop1) = 10_000 lamports
- *   - priority fee = 1k µLamports × 400_000 CU = 400 lamports
- *   - holder ATA rent (permanently kept by the holder)
- *   - hop1 ATA rent (paid + refunded in the same tx, net 0)
+ * Net buyer-wallet SOL cost per holder in the atomic 1-hop model.
+ * For a holder whose ATA already exists (repeat delivery), the only cost is
+ * 2 sig base fees + priority fee ≈ 10_400 lamports. The ATA rent (2_039_280)
+ * is paid only on the FIRST delivery to that holder and never again.
+ *
+ * Used only for accounting and the spend-cap reserve calculation below.
  */
 export function lamportsPerHolder(): number {
-  return 10_400 + HOLDER_ATA_RENT;
+  return 10_400;
 }
 
 function estimateLamportsNeeded(holderCount: number): number {
@@ -258,11 +259,17 @@ function estimateLamportsNeeded(holderCount: number): number {
 }
 
 /**
- * SOL the buyer must hold back from the buy step. Since all per-holder spending
- * happens atomically (the buyer is the fee payer + rent payer for every tx),
- * we need: lamportsPerHolder × holderCount, plus a safety pad.
+ * SOL held back from the buy step to cover this cycle's distribution costs.
+ * Worst-case-but-realistic estimate:
+ *   - All-repeat-holder tx fees:      10_400 × N lamports
+ *   - Up to ~20% might be new holders this cycle (ATA rent each)
+ *   - +0.01 SOL pad for fee-market jitter
+ * The buyer's idle wallet balance (the 4-SOL safety reserve) provides the
+ * real backstop, so we don't need to over-reserve here.
  */
 export function recommendedReserveLamports(holderCount: number): number {
-  const netCost = lamportsPerHolder() * holderCount;
-  return netCost + 5_000_000; // +0.005 SOL pad for fee-market jitter
+  const txFees = 10_400 * holderCount;
+  const expectedNewHolders = Math.ceil(holderCount * 0.2);
+  const newAtaRent = HOLDER_ATA_RENT * expectedNewHolders;
+  return txFees + newAtaRent + 10_000_000; // +0.01 SOL pad
 }
