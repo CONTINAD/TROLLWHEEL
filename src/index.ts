@@ -194,16 +194,20 @@ async function main() {
       } catch { /* dashboard-only — never block the cycle */ }
 
       // 4. Spend cap: BUYBACK_PERCENT% of accumulated claim pool, never from dev wallet.
+      //    A slice of the spendable also funds onboarding (subsidizing ATA rent
+      //    for first-time receivers who'd otherwise fail the cost-vs-value gate).
       const pool = tracker.getClaimPool();
       const spendCapLamports = Math.floor(pool * (config.buybackPercent / 100));
       const reserveLamports = recommendedReserveLamports(distributingTo);
-      const buyLamports = spendCapLamports - reserveLamports;
+      const onboardBudgetLamports = Math.floor(spendCapLamports * (config.onboardBudgetPct / 100));
+      const buyLamports = spendCapLamports - reserveLamports - onboardBudgetLamports;
       const buyAmountSol = buyLamports / LAMPORTS_PER_SOL;
 
       logger.info(
         `Pool: ${(pool / LAMPORTS_PER_SOL).toFixed(6)} SOL · ` +
         `spendable (${config.buybackPercent}%): ${(spendCapLamports / LAMPORTS_PER_SOL).toFixed(6)} SOL · ` +
-        `reserve for ${distributingTo} hops: ${(reserveLamports / LAMPORTS_PER_SOL).toFixed(6)} SOL · ` +
+        `reserve: ${(reserveLamports / LAMPORTS_PER_SOL).toFixed(6)} SOL · ` +
+        `onboard budget (${config.onboardBudgetPct}%): ${(onboardBudgetLamports / LAMPORTS_PER_SOL).toFixed(6)} SOL · ` +
         `buy: ${buyAmountSol.toFixed(6)} SOL`
       );
 
@@ -238,7 +242,12 @@ async function main() {
         await getTokenBalance(buyer.publicKey, trollMint)
       );
 
-      const result = await distributor.run(holders);
+      const result = await distributor.run(holders, { onboardBudgetLamports });
+
+      // Deduct the actual onboarding subsidy spent from the claim pool.
+      if (result.subsidyLamportsSpent > 0) {
+        tracker.debitClaimPool(result.subsidyLamportsSpent);
+      }
 
       for (const d of result.details) {
         tracker.recordHolderDistribution({

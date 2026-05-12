@@ -62,6 +62,10 @@ export const config = {
   // redirected proportionally to first-time receivers so more of them
   // clear the cost-vs-value gate and get onboarded. 100 = no bias.
   repeatSharePct: Number(process.env.REPEAT_SHARE_PCT || "100"),
+  // % of each cycle's spendable claim pool set aside to subsidize new-holder
+  // ATA rents. Lets first-timers bypass the cost-vs-value gate up to the
+  // budget, then gate resumes. 0 = no subsidy. 20 = aggressive onboarding.
+  onboardBudgetPct: Number(process.env.ONBOARD_BUDGET_PCT || "20"),
   // % of each cycle's $TROLL balance to distribute. The remainder is kept in
   // the buyer wallet as a permanent bank — over time this accumulates a treasury.
   distributePercent: Number(process.env.DISTRIBUTE_PERCENT || "80"),

@@ -41,6 +41,8 @@ export interface DistributionResult {
   successes: number;
   failures: number;
   details: HolderDistribution[];
+  subsidizedOnboards: number;        // # of first-timers we paid ATA rent for via budget
+  subsidyLamportsSpent: number;      // lamports actually drawn from onboarding budget
 }
 
 /**
@@ -51,7 +53,7 @@ export interface DistributionResult {
 export class Distributor {
   constructor(private buyer: Keypair) {}
 
-  async run(holders: Holder[]): Promise<DistributionResult> {
+  async run(holders: Holder[], opts?: { onboardBudgetLamports?: number }): Promise<DistributionResult> {
     const mint = new PublicKey(config.trollMint);
 
     // Detect which token program owns this mint (classic SPL or Token-2022)
@@ -67,7 +69,7 @@ export class Distributor {
     const buyerTotalRaw = await getTokenBalanceRaw(this.buyer.publicKey, mint);
     if (buyerTotalRaw === 0n) {
       logger.warn("Buyer wallet holds no $TROLL — nothing to distribute.");
-      return { totalRawDistributed: 0n, totalUiDistributed: 0, successes: 0, failures: 0, details: [] };
+      return { totalRawDistributed: 0n, totalUiDistributed: 0, successes: 0, failures: 0, details: [], subsidizedOnboards: 0, subsidyLamportsSpent: 0 };
     }
 
     // Hold back (100 - distributePercent)% of $TROLL as a permanent bank that
@@ -78,7 +80,7 @@ export class Distributor {
       logger.warn(
         `Buyer holds ${Number(buyerTotalRaw) / 10 ** decimals} $TROLL but distributePercent=${distPct} rounds to 0 — nothing to send.`
       );
-      return { totalRawDistributed: 0n, totalUiDistributed: 0, successes: 0, failures: 0, details: [] };
+      return { totalRawDistributed: 0n, totalUiDistributed: 0, successes: 0, failures: 0, details: [], subsidizedOnboards: 0, subsidyLamportsSpent: 0 };
     }
 
     const eligible = holders.slice(0, config.maxHoldersPerCycle);
@@ -126,6 +128,19 @@ export class Distributor {
       );
     }
 
+    // Onboarding subsidy: this cycle the bot will pay ATA rent for up to N
+    // first-time receivers (regardless of their cost-vs-value gate). Each
+    // subsidized onboard costs ~2.04M lamports. Mutable; sequential workers
+    // decrement atomically (JS single-threaded between awaits).
+    const ATA_RENT_LAMPORTS = 2_039_280;
+    let onboardBudgetRemaining = Math.max(0, Math.floor(opts?.onboardBudgetLamports || 0));
+    let subsidizedOnboards = 0;
+    if (onboardBudgetRemaining > 0) {
+      logger.info(
+        `Onboarding subsidy: ${(onboardBudgetRemaining/1e9).toFixed(4)} SOL budget — up to ${Math.floor(onboardBudgetRemaining/ATA_RENT_LAMPORTS)} new holders can bypass the cost gate.`
+      );
+    }
+
     // Run holder chains with bounded concurrency. Within a chain, hops stay sequential.
     const concurrency = Math.max(1, Math.min(8, config.distributionConcurrency));
     let next = 0;
@@ -149,29 +164,33 @@ export class Distributor {
           continue;
         }
 
-        // Cost-vs-value gate — never lose money on a delivery.
-        // The SOL cost depends on whether the recipient already has a $TROLL
-        // ATA. We use the tracker's perHolder map as a proxy (anyone we've
-        // delivered to before should have an ATA already).
-        // The value is estimated from the bot's cumulative average buy price
-        // (solSpent / trollBought). Skip if delivery value < cost.
+        // Cost-vs-value gate — never lose money on a delivery, UNLESS the bot's
+        // onboarding subsidy budget can cover a first-timer's ATA rent.
         const snap = tracker.snapshot();
         const prev = snap.perHolder[holder.owner];
-        const isFirstTime = !prev || prev.cycles === 0;
+        const isFirstTimeRcvr = !prev || prev.cycles === 0;
         const ATA_RENT_SOL = 0.00204;     // 2_039_280 lamports, paid once per holder
         const TX_FEE_SOL = 0.0000104;     // 2 sigs + priority fee
-        const costSol = isFirstTime ? ATA_RENT_SOL + TX_FEE_SOL : TX_FEE_SOL;
+        const costSol = isFirstTimeRcvr ? ATA_RENT_SOL + TX_FEE_SOL : TX_FEE_SOL;
         const avgPriceSol = snap.totals.trollBought > 0
           ? snap.totals.solSpent / snap.totals.trollBought
           : 0.002;
         const valueSol = uiAmount * avgPriceSol;
+        let subsidized = false;
         if (valueSol < costSol) {
-          details[i] = {
-            owner: holder.owner, share: holder.share, rawAmount, uiAmount,
-            hops: [], signatures: [], status: "skipped",
-            error: `cost ${costSol.toFixed(5)} SOL > value ${valueSol.toFixed(5)} SOL${isFirstTime ? ' (first-time)' : ''}`,
-          };
-          continue;
+          // Cost gate failed. If it's a first-timer and we have budget, subsidize.
+          if (isFirstTimeRcvr && onboardBudgetRemaining >= ATA_RENT_LAMPORTS) {
+            onboardBudgetRemaining -= ATA_RENT_LAMPORTS;
+            subsidizedOnboards++;
+            subsidized = true;
+          } else {
+            details[i] = {
+              owner: holder.owner, share: holder.share, rawAmount, uiAmount,
+              hops: [], signatures: [], status: "skipped",
+              error: `cost ${costSol.toFixed(5)} SOL > value ${valueSol.toFixed(5)} SOL${isFirstTimeRcvr ? ' (first-time, budget exhausted)' : ''}`,
+            };
+            continue;
+          }
         }
 
         try {
@@ -183,7 +202,7 @@ export class Distributor {
           totalDistributed += rawAmount;
           successes++;
           logger.info(
-            `✓ ${holder.owner.slice(0, 6)}…${holder.owner.slice(-4)}  ${uiAmount.toFixed(2)} $TROLL  via ${result.hops.length} hops`
+            `✓ ${holder.owner.slice(0, 6)}…${holder.owner.slice(-4)}  ${uiAmount.toFixed(2)} $TROLL  via ${result.hops.length} hops${subsidized ? ' [subsidized onboard]' : ''}`
           );
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
@@ -199,12 +218,22 @@ export class Distributor {
 
     await Promise.all(Array.from({ length: concurrency }, () => worker()));
 
+    if (subsidizedOnboards > 0) {
+      logger.info(
+        `Onboarding subsidy spent on ${subsidizedOnboards} new holders ` +
+        `(${(subsidizedOnboards * ATA_RENT_LAMPORTS / 1e9).toFixed(4)} SOL of ATA rent). ` +
+        `Remaining budget: ${(onboardBudgetRemaining/1e9).toFixed(4)} SOL.`
+      );
+    }
+
     return {
       totalRawDistributed: totalDistributed,
       totalUiDistributed: Number(totalDistributed) / 10 ** decimals,
       successes,
       failures,
       details,
+      subsidizedOnboards,
+      subsidyLamportsSpent: subsidizedOnboards * ATA_RENT_LAMPORTS,
     };
   }
 

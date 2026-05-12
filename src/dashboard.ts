@@ -489,9 +489,7 @@ export function renderHTML(): string {
           </div>
         </div>
         <div class="threshold-disclaimer">
-          ⚠ When SOL claims are slow this period, the <b>first-time threshold</b> can spike huge —
-          the bot needs a bigger pot to cover the ~$0.20 ATA rent it pays to onboard each new holder.
-          As trading volume returns and more SOL flows in, the bar drops fast.
+          The amount you need to hold scales with fees claimed this cycle — more trading volume = lower threshold.
         </div>
         <div class="threshold-foot" id="thresholdFoot">recomputed each cycle</div>
       </div>
