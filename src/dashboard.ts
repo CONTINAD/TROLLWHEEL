@@ -455,6 +455,24 @@ export function renderHTML(): string {
       </div>
     </section>
 
+    <section class="grid g3">
+      <div class="card">
+        <div class="label"><span class="icon">◆</span> Unique holders reached</div>
+        <div class="value" id="holdersReached">0</div>
+        <div class="sub" id="distCount">0 confirmed transfers · routed via 1 fresh hop wallet</div>
+      </div>
+      <div class="card">
+        <div class="label"><span class="icon">◐</span> Avg cost per holder</div>
+        <div class="value"><span id="avgCost">0.0021</span><span class="unit">SOL</span></div>
+        <div class="sub">covers tx fees + holder ATA rent (one-time per holder)</div>
+      </div>
+      <div class="card">
+        <div class="label"><span class="icon">⌖</span> Buyer wallet</div>
+        <div class="value"><span id="buyerTroll">0</span><span class="unit">$TROLL</span></div>
+        <div class="sub" id="buyerSol">0 SOL · —</div>
+      </div>
+    </section>
+
     <section class="threshold-card" id="thresholdCard" style="display:none;">
       <div class="threshold-inner">
         <div class="threshold-label">⚡ Hold this much $TROLLWHEEL to qualify for the next reward</div>
@@ -476,24 +494,6 @@ export function renderHTML(): string {
           As trading volume returns and more SOL flows in, the bar drops fast.
         </div>
         <div class="threshold-foot" id="thresholdFoot">recomputed each cycle</div>
-      </div>
-    </section>
-
-    <section class="grid g3">
-      <div class="card">
-        <div class="label"><span class="icon">◆</span> Unique holders reached</div>
-        <div class="value" id="holdersReached">0</div>
-        <div class="sub" id="distCount">0 confirmed transfers · routed via 1 fresh hop wallet</div>
-      </div>
-      <div class="card">
-        <div class="label"><span class="icon">◐</span> Avg cost per holder</div>
-        <div class="value"><span id="avgCost">0.0021</span><span class="unit">SOL</span></div>
-        <div class="sub">covers tx fees + holder ATA rent (one-time per holder)</div>
-      </div>
-      <div class="card">
-        <div class="label"><span class="icon">⌖</span> Buyer wallet</div>
-        <div class="value"><span id="buyerTroll">0</span><span class="unit">$TROLL</span></div>
-        <div class="sub" id="buyerSol">0 SOL · —</div>
       </div>
     </section>
 
