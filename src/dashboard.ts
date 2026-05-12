@@ -127,8 +127,8 @@ export function renderHTML(): string {
   .nav { display: flex; gap: 4px; align-items: center; font-weight: 600; font-size: 13px; }
   .nav a { color: #fff; text-decoration: none; opacity: .85; padding: 6px 12px; border-radius: 999px; transition: .15s; display: inline-flex; align-items: center; gap: 7px; }
   .nav a:hover { opacity: 1; background: rgba(255,255,255,.08); color: var(--accent); }
-  .nav .nav-x svg { transition: transform .2s; }
-  .nav .nav-x:hover svg { transform: scale(1.15); }
+  .nav .nav-x svg, .nav .nav-tg svg { transition: transform .2s; }
+  .nav .nav-x:hover svg, .nav .nav-tg:hover svg { transform: scale(1.15); }
   .nav .sep { color: rgba(255,255,255,.3); padding: 0 4px; }
 
   /* hero */
@@ -416,6 +416,11 @@ export function renderHTML(): string {
         <a class="nav-x" href="https://x.com/i/communities/2005516643519086682" target="_blank" rel="noopener" aria-label="X Community">
           <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor"><path d="M18.244 2H21.5l-7.5 8.575L23 22h-6.844l-5.36-7.01L4.6 22H1.34l8.063-9.213L1 2h7.012l4.846 6.41L18.244 2Zm-1.2 18.2h1.86L7.05 3.7H5.06l11.984 16.5Z"/></svg>
           <span>X COMMUNITY</span>
+        </a>
+        <span class="sep">·</span>
+        <a class="nav-tg" href="https://t.me/TROLLWHEELPORTAL" target="_blank" rel="noopener" aria-label="Telegram">
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="currentColor"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0Zm5.894 8.221-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.446 1.394c-.16.16-.295.295-.605.295l.213-3.054 5.56-5.022c.242-.213-.054-.334-.373-.121l-6.869 4.326-2.96-.924c-.643-.204-.657-.643.135-.953l11.566-4.458c.538-.196 1.006.128.832.94Z"/></svg>
+          <span>TELEGRAM</span>
         </a>
         <span class="sep">·</span>
         <a id="dexLink" href="https://dexscreener.com/solana" target="_blank" rel="noopener">DEXSCREENER</a>
