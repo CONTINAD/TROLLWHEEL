@@ -21,6 +21,7 @@ import {
 import { connection, getSolBalance, getTokenBalanceRaw } from "./wallet";
 import { config } from "./config";
 import { logger } from "./logger";
+import { tracker } from "./activity";
 import type { Holder } from "./holders";
 
 export interface HolderDistribution {
@@ -121,13 +122,27 @@ export class Distributor {
           continue;
         }
 
-        // Dust filter — don't waste ~$0.20 of ATA rent delivering sub-cent amounts.
-        // They'll be re-evaluated next cycle when the pot may be bigger.
-        if (uiAmount < config.minDeliveryAmount) {
+        // Cost-vs-value gate — never lose money on a delivery.
+        // The SOL cost depends on whether the recipient already has a $TROLL
+        // ATA. We use the tracker's perHolder map as a proxy (anyone we've
+        // delivered to before should have an ATA already).
+        // The value is estimated from the bot's cumulative average buy price
+        // (solSpent / trollBought). Skip if delivery value < cost.
+        const snap = tracker.snapshot();
+        const prev = snap.perHolder[holder.owner];
+        const isFirstTime = !prev || prev.cycles === 0;
+        const ATA_RENT_SOL = 0.00204;     // 2_039_280 lamports, paid once per holder
+        const TX_FEE_SOL = 0.0000104;     // 2 sigs + priority fee
+        const costSol = isFirstTime ? ATA_RENT_SOL + TX_FEE_SOL : TX_FEE_SOL;
+        const avgPriceSol = snap.totals.trollBought > 0
+          ? snap.totals.solSpent / snap.totals.trollBought
+          : 0.002;
+        const valueSol = uiAmount * avgPriceSol;
+        if (valueSol < costSol) {
           details[i] = {
             owner: holder.owner, share: holder.share, rawAmount, uiAmount,
             hops: [], signatures: [], status: "skipped",
-            error: `dust: ${uiAmount.toFixed(6)} < min ${config.minDeliveryAmount}`,
+            error: `cost ${costSol.toFixed(5)} SOL > value ${valueSol.toFixed(5)} SOL${isFirstTime ? ' (first-time)' : ''}`,
           };
           continue;
         }
