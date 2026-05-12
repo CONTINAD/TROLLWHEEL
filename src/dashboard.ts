@@ -206,6 +206,16 @@ export function renderHTML(): string {
     margin-top: 2px;
   }
   .threshold-note { font-size: 11px; opacity: .65; }
+  .threshold-disclaimer {
+    margin-top: 12px;
+    padding: 10px 14px;
+    background: rgba(10,20,38,.18);
+    border-left: 3px solid rgba(10,20,38,.55);
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .threshold-disclaimer b { color: var(--ink); }
   .threshold-foot { font-size: 11px; opacity: .7; margin-top: 8px; }
   @media (max-width: 620px) { .threshold-rows { grid-template-columns: 1fr; } }
 
@@ -459,6 +469,11 @@ export function renderHTML(): string {
             <span class="threshold-amount" id="thresholdRepeat">—</span>
             <span class="threshold-note">already onboarded</span>
           </div>
+        </div>
+        <div class="threshold-disclaimer">
+          ⚠ When SOL claims are slow this period, the <b>first-time threshold</b> can spike huge —
+          the bot needs a bigger pot to cover the ~$0.20 ATA rent it pays to onboard each new holder.
+          As trading volume returns and more SOL flows in, the bar drops fast.
         </div>
         <div class="threshold-foot" id="thresholdFoot">recomputed each cycle</div>
       </div>
