@@ -36,7 +36,7 @@ export class TrollBuyer {
           denominatedInSol: "true",
           slippage: config.maxSlippage,
           priorityFee: config.priorityFee,
-          pool: "auto",
+          pool: "pump-amm",
         }),
       }
     );
