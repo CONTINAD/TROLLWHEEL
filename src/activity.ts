@@ -59,6 +59,15 @@ export interface DashboardState {
     holderCount: number;
   };
 
+  // Minimum $TROLLWHEEL balance needed to qualify for a reward in the next
+  // cycle. Computed each cycle from the cost-vs-value gate (delivery is only
+  // sent when SOL value > SOL cost).
+  rewardThreshold?: {
+    firstTime: number;   // for holders without an existing $TROLL ATA
+    repeat: number;      // for holders with an existing $TROLL ATA
+    updatedAt: number;
+  };
+
   events: CycleEvent[];   // ring buffer, newest last
   perHolder: Record<
     string,
@@ -201,6 +210,11 @@ class Tracker {
   /** Unconditionally wipe all persisted state. */
   forceReset() {
     this.state = emptyState();
+    this.persist();
+  }
+
+  setRewardThreshold(firstTime: number, repeat: number) {
+    this.state.rewardThreshold = { firstTime, repeat, updatedAt: Date.now() };
     this.persist();
   }
 

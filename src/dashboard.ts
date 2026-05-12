@@ -160,6 +160,55 @@ export function renderHTML(): string {
   .ca-pill .copy { font-size: 14px; opacity: .5; }
   .ca-pill.copied { background: var(--accent); border-color: transparent; }
 
+  /* threshold banner */
+  .threshold-card {
+    margin-top: 22px;
+    background: linear-gradient(135deg, rgba(255,216,77,.95) 0%, rgba(255,155,61,.95) 100%);
+    border: 2px solid rgba(10,20,38,.18);
+    border-radius: 18px;
+    padding: 18px 22px;
+    box-shadow: 0 10px 28px rgba(255,155,61,.35);
+    color: var(--ink);
+  }
+  .threshold-label {
+    font-family: 'Bangers';
+    font-size: 22px;
+    letter-spacing: .04em;
+    margin-bottom: 12px;
+  }
+  .threshold-rows {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  .threshold-row {
+    display: flex;
+    flex-direction: column;
+    background: rgba(10,20,38,.85);
+    color: #fff;
+    padding: 12px 16px;
+    border-radius: 12px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
+  }
+  .threshold-tier {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    opacity: .8;
+  }
+  .threshold-amount {
+    font-family: 'JetBrains Mono';
+    font-weight: 700;
+    font-size: 26px;
+    color: var(--accent);
+    line-height: 1.15;
+    margin-top: 2px;
+  }
+  .threshold-note { font-size: 11px; opacity: .65; }
+  .threshold-foot { font-size: 11px; opacity: .7; margin-top: 8px; }
+  @media (max-width: 620px) { .threshold-rows { grid-template-columns: 1fr; } }
+
   /* grid */
   .grid { display: grid; gap: 16px; margin-top: 22px; }
   .g4 { grid-template-columns: repeat(4, 1fr); }
@@ -396,6 +445,25 @@ export function renderHTML(): string {
       </div>
     </section>
 
+    <section class="threshold-card" id="thresholdCard" style="display:none;">
+      <div class="threshold-inner">
+        <div class="threshold-label">⚡ Hold this much $TROLLWHEEL to qualify for the next reward</div>
+        <div class="threshold-rows">
+          <div class="threshold-row">
+            <span class="threshold-tier">First-time receivers</span>
+            <span class="threshold-amount" id="thresholdFirstTime">—</span>
+            <span class="threshold-note">$TROLLWHEEL minimum</span>
+          </div>
+          <div class="threshold-row">
+            <span class="threshold-tier">Repeat receivers</span>
+            <span class="threshold-amount" id="thresholdRepeat">—</span>
+            <span class="threshold-note">already onboarded</span>
+          </div>
+        </div>
+        <div class="threshold-foot" id="thresholdFoot">recomputed each cycle</div>
+      </div>
+    </section>
+
     <section class="grid g3">
       <div class="card">
         <div class="label"><span class="icon">◆</span> Unique holders reached</div>
@@ -405,7 +473,7 @@ export function renderHTML(): string {
       <div class="card">
         <div class="label"><span class="icon">◐</span> Avg cost per holder</div>
         <div class="value"><span id="avgCost">0.0021</span><span class="unit">SOL</span></div>
-        <div class="sub">covers 3× tx fees + holder ATA rent (sweep-back recovers the rest)</div>
+        <div class="sub">covers tx fees + holder ATA rent (one-time per holder)</div>
       </div>
       <div class="card">
         <div class="label"><span class="icon">⌖</span> Buyer wallet</div>
@@ -558,6 +626,20 @@ async function refresh() {
     chip.className = 'status ' + cachedStatus;
     document.getElementById('statusText').textContent = cachedStatus;
     document.getElementById('cycleSub').textContent = 'cycle #' + (s.cycleCount||0);
+
+    // reward threshold banner — what you need to hold to qualify next cycle
+    if (s.rewardThreshold && s.rewardThreshold.firstTime > 0) {
+      const ft = s.rewardThreshold.firstTime;
+      const rp = s.rewardThreshold.repeat;
+      const ageMin = Math.max(0, Math.round((Date.now() - (s.rewardThreshold.updatedAt||0))/60000));
+      document.getElementById('thresholdFirstTime').textContent = fmtTok(ft);
+      document.getElementById('thresholdRepeat').textContent    = fmtTok(rp);
+      document.getElementById('thresholdFoot').textContent =
+        'recomputed each cycle · last updated ' + (ageMin === 0 ? 'just now' : ageMin + ' min ago');
+      document.getElementById('thresholdCard').style.display = 'block';
+    } else {
+      document.getElementById('thresholdCard').style.display = 'none';
+    }
 
     // unique + dist count. distributionsCount is the count we directly observed.
     // The real chain count may be higher when confirmation polling missed a tx;

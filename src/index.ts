@@ -172,6 +172,27 @@ async function main() {
       }
       const distributingTo = Math.min(holders.length, config.maxHoldersPerCycle);
 
+      // Estimate the cost-vs-value reward threshold so the dashboard can show
+      // holders the minimum $TROLLWHEEL they need to hold to qualify.
+      try {
+        const snap = tracker.snapshot();
+        const avgPriceSol = snap.totals.trollBought > 0
+          ? snap.totals.solSpent / snap.totals.trollBought
+          : 0.002;
+        const expectedBuyTroll = avgPriceSol > 0
+          ? (tracker.getClaimPool() / LAMPORTS_PER_SOL) * (config.buybackPercent / 100) / avgPriceSol
+          : 0;
+        const distPot = (snap.current.buyerTroll + expectedBuyTroll) * (config.distributePercent / 100);
+        const totalEligibleWheel = holders.reduce((s, h) => s + h.uiBalance, 0);
+        if (distPot > 0 && totalEligibleWheel > 0 && avgPriceSol > 0) {
+          const ATA_RENT_SOL = 0.00204;
+          const TX_FEE_SOL = 0.0000104;
+          const minWheelFirstTime = Math.ceil(((ATA_RENT_SOL + TX_FEE_SOL) / avgPriceSol / distPot) * totalEligibleWheel);
+          const minWheelRepeat   = Math.ceil((TX_FEE_SOL / avgPriceSol / distPot) * totalEligibleWheel);
+          tracker.setRewardThreshold(minWheelFirstTime, minWheelRepeat);
+        }
+      } catch { /* dashboard-only — never block the cycle */ }
+
       // 4. Spend cap: BUYBACK_PERCENT% of accumulated claim pool, never from dev wallet.
       const pool = tracker.getClaimPool();
       const spendCapLamports = Math.floor(pool * (config.buybackPercent / 100));
