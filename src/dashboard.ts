@@ -473,25 +473,12 @@ export function renderHTML(): string {
       </div>
     </section>
 
-    <section class="threshold-card" id="thresholdCard" style="display:none;">
+    <section class="threshold-card" id="thresholdCard">
       <div class="threshold-inner">
-        <div class="threshold-label">⚡ Hold this much $TROLLWHEEL to qualify for the next reward</div>
-        <div class="threshold-rows">
-          <div class="threshold-row">
-            <span class="threshold-tier">First-time receivers</span>
-            <span class="threshold-amount" id="thresholdFirstTime">—</span>
-            <span class="threshold-note">$TROLLWHEEL minimum</span>
-          </div>
-          <div class="threshold-row">
-            <span class="threshold-tier">Repeat receivers</span>
-            <span class="threshold-amount" id="thresholdRepeat">—</span>
-            <span class="threshold-note">already onboarded</span>
-          </div>
-        </div>
+        <div class="threshold-label">⚡ Reward eligibility</div>
         <div class="threshold-disclaimer">
-          The amount you need to hold scales with fees claimed this cycle — more trading volume = lower threshold.
+          The amount of $TROLLWHEEL you need to hold scales with fees claimed this cycle — more trading volume = lower threshold.
         </div>
-        <div class="threshold-foot" id="thresholdFoot">recomputed each cycle</div>
       </div>
     </section>
 
@@ -640,19 +627,7 @@ async function refresh() {
     document.getElementById('statusText').textContent = cachedStatus;
     document.getElementById('cycleSub').textContent = 'cycle #' + (s.cycleCount||0);
 
-    // reward threshold banner — what you need to hold to qualify next cycle
-    if (s.rewardThreshold && s.rewardThreshold.firstTime > 0) {
-      const ft = s.rewardThreshold.firstTime;
-      const rp = s.rewardThreshold.repeat;
-      const ageMin = Math.max(0, Math.round((Date.now() - (s.rewardThreshold.updatedAt||0))/60000));
-      document.getElementById('thresholdFirstTime').textContent = fmtTok(ft);
-      document.getElementById('thresholdRepeat').textContent    = fmtTok(rp);
-      document.getElementById('thresholdFoot').textContent =
-        'recomputed each cycle · last updated ' + (ageMin === 0 ? 'just now' : ageMin + ' min ago');
-      document.getElementById('thresholdCard').style.display = 'block';
-    } else {
-      document.getElementById('thresholdCard').style.display = 'none';
-    }
+    // (Threshold card is now a static disclaimer — no dynamic values to update.)
 
     // unique + dist count. distributionsCount is the count we directly observed.
     // The real chain count may be higher when confirmation polling missed a tx;
