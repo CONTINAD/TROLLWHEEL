@@ -121,6 +121,17 @@ export class Distributor {
           continue;
         }
 
+        // Dust filter — don't waste ~$0.20 of ATA rent delivering sub-cent amounts.
+        // They'll be re-evaluated next cycle when the pot may be bigger.
+        if (uiAmount < config.minDeliveryAmount) {
+          details[i] = {
+            owner: holder.owner, share: holder.share, rawAmount, uiAmount,
+            hops: [], signatures: [], status: "skipped",
+            error: `dust: ${uiAmount.toFixed(6)} < min ${config.minDeliveryAmount}`,
+          };
+          continue;
+        }
+
         try {
           const result = await this.sendThroughHops(holder.owner, mint, tokenProgram, decimals, rawAmount);
           details[i] = {

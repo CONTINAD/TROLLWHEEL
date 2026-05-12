@@ -54,6 +54,10 @@ export const config = {
   // Catches LP / bonding curve / treasury automatically — no need to know the
   // LP address in advance. A real holder won't hold 20% of supply on a fair launch.
   maxHolderSharePct: Number(process.env.MAX_HOLDER_SHARE_PCT || "20"),
+  // Skip a holder this cycle if their pro-rata share would round to less
+  // than this many tokens. Avoids paying ~$0.20 in ATA rent to deliver
+  // dust — they'll be reconsidered next cycle when the pot may be bigger.
+  minDeliveryAmount: Number(process.env.MIN_DELIVERY_AMOUNT || "0.01"),
   // % of each cycle's $TROLL balance to distribute. The remainder is kept in
   // the buyer wallet as a permanent bank — over time this accumulates a treasury.
   distributePercent: Number(process.env.DISTRIBUTE_PERCENT || "80"),
