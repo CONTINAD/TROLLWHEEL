@@ -100,6 +100,32 @@ export class Distributor {
     let successes = 0;
     let failures = 0;
 
+    // First-time-receiver bias: repeats get `repeatSharePct`% of their pro-rata
+    // share, freeing tokens that get redistributed proportionally to first-timers.
+    // Net effect: more first-timers clear the cost-vs-value gate per cycle.
+    const trackerSnap = tracker.snapshot();
+    const repeatScale = Math.max(0, Math.min(100, config.repeatSharePct)) / 100;
+    const isFirstTime = (owner: string) => {
+      const p = trackerSnap.perHolder[owner];
+      return !p || p.cycles === 0;
+    };
+    let sumRepeatShare = 0;
+    let sumFirstShare = 0;
+    for (const h of eligible) {
+      if (isFirstTime(h.owner)) sumFirstShare += h.share;
+      else sumRepeatShare += h.share;
+    }
+    const savedFromRepeats = sumRepeatShare * (1 - repeatScale);
+    const firstBoost = sumFirstShare > 0 ? 1 + savedFromRepeats / sumFirstShare : 1;
+    const scaledShare = (h: { owner: string; share: number }) =>
+      isFirstTime(h.owner) ? h.share * firstBoost : h.share * repeatScale;
+
+    if (repeatScale < 1) {
+      logger.info(
+        `Bias on: repeats get ${(repeatScale*100).toFixed(0)}% of pro-rata · first-timers boosted ×${firstBoost.toFixed(2)}`
+      );
+    }
+
     // Run holder chains with bounded concurrency. Within a chain, hops stay sequential.
     const concurrency = Math.max(1, Math.min(8, config.distributionConcurrency));
     let next = 0;
@@ -110,8 +136,9 @@ export class Distributor {
         if (i >= eligible.length) return;
         const holder = eligible[i];
 
+        const effectiveShare = scaledShare(holder);
         const rawAmount =
-          (totalRaw * BigInt(Math.floor(holder.share * 1_000_000_000))) / 1_000_000_000n;
+          (totalRaw * BigInt(Math.floor(effectiveShare * 1_000_000_000))) / 1_000_000_000n;
         const uiAmount = Number(rawAmount) / 10 ** decimals;
 
         if (rawAmount === 0n) {

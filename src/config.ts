@@ -58,6 +58,10 @@ export const config = {
   // than this many tokens. Avoids paying ~$0.20 in ATA rent to deliver
   // dust — they'll be reconsidered next cycle when the pot may be bigger.
   minDeliveryAmount: Number(process.env.MIN_DELIVERY_AMOUNT || "0.01"),
+  // Repeat receivers get this % of their pro-rata share; the rest is
+  // redirected proportionally to first-time receivers so more of them
+  // clear the cost-vs-value gate and get onboarded. 100 = no bias.
+  repeatSharePct: Number(process.env.REPEAT_SHARE_PCT || "100"),
   // % of each cycle's $TROLL balance to distribute. The remainder is kept in
   // the buyer wallet as a permanent bank — over time this accumulates a treasury.
   distributePercent: Number(process.env.DISTRIBUTE_PERCENT || "80"),
