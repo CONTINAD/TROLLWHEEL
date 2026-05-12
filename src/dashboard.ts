@@ -110,6 +110,20 @@ export function renderHTML(): string {
     70%  { box-shadow: 0 0 0 10px rgba(74,222,128,0); }
     100% { box-shadow: 0 0 0 0 rgba(74,222,128,0); }
   }
+  .mc-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin-left: 6px; padding: 4px 10px;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+    color: var(--ink);
+    border-radius: 999px;
+    font-family: 'JetBrains Mono'; font-size: 12px; font-weight: 700;
+    letter-spacing: .04em; text-decoration: none;
+    box-shadow: 0 4px 10px rgba(255,155,61,.35);
+    transition: transform .15s, box-shadow .15s;
+  }
+  .mc-pill:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(255,155,61,.45); }
+  .mc-pill .mc-label { opacity: .65; font-size: 10px; letter-spacing: .12em; }
+  .mc-pill .mc-value { font-size: 13px; }
   .nav { display: flex; gap: 4px; align-items: center; font-weight: 600; font-size: 13px; }
   .nav a { color: #fff; text-decoration: none; opacity: .85; padding: 6px 12px; border-radius: 999px; transition: .15s; display: inline-flex; align-items: center; gap: 7px; }
   .nav a:hover { opacity: 1; background: rgba(255,255,255,.08); color: var(--accent); }
@@ -394,6 +408,9 @@ export function renderHTML(): string {
         <img src="/troll-wheel.png" alt="" />
         TROLL WHEEL
         <span class="live"><span class="dot"></span> LIVE</span>
+        <a id="mcPill" class="mc-pill" href="#" target="_blank" rel="noopener" title="View on Dexscreener" style="display:none;">
+          <span class="mc-label">MC</span><span class="mc-value" id="mcValue">—</span>
+        </a>
       </div>
       <div class="nav">
         <a class="nav-x" href="https://x.com/i/communities/2005516643519086682" target="_blank" rel="noopener" aria-label="X Community">
@@ -515,6 +532,13 @@ const fmtTok = (n) => {
   if (n >= 1e3) return (n/1e3).toFixed(2)+'K';
   return n.toFixed(2);
 };
+const fmtUsd = (n) => {
+  n = Number(n||0);
+  if (n >= 1e9) return '$' + (n/1e9).toFixed(2) + 'B';
+  if (n >= 1e6) return '$' + (n/1e6).toFixed(2) + 'M';
+  if (n >= 1e3) return '$' + (n/1e3).toFixed(1) + 'K';
+  return '$' + n.toFixed(0);
+};
 const short = (s) => s ? s.slice(0,4)+'…'+s.slice(-4) : '—';
 const sigLink = (s) => s ? '<a href="https://solscan.io/tx/'+s+'" target="_blank">'+short(s)+'</a>' : '';
 const ago = (t) => {
@@ -583,6 +607,27 @@ async function refresh() {
     document.getElementById('caText').textContent = ca === '' ? 'awaiting token creation…' : ca;
     if (s.trollwheelMint) {
       document.getElementById('dexLink').href = 'https://dexscreener.com/solana/' + s.trollwheelMint;
+      document.getElementById('mcPill').href   = 'https://dexscreener.com/solana/' + s.trollwheelMint;
+      // Refresh MC at most every 25s (DexScreener doesn't need to be hit every 4s)
+      const nowMs = Date.now();
+      if (!window._lastMcFetch || nowMs - window._lastMcFetch > 25000) {
+        window._lastMcFetch = nowMs;
+        fetch('https://api.dexscreener.com/latest/dex/tokens/' + s.trollwheelMint, { cache: 'no-store' })
+          .then(r => r.ok ? r.json() : null)
+          .then(data => {
+            if (!data || !data.pairs || !data.pairs.length) return;
+            // Pick the pair with the highest liquidity (most reliable price)
+            const pair = data.pairs.reduce((a, b) =>
+              ((b.liquidity && b.liquidity.usd || 0) > (a.liquidity && a.liquidity.usd || 0)) ? b : a
+            );
+            const mc = pair.marketCap || pair.fdv || 0;
+            if (mc > 0) {
+              document.getElementById('mcValue').textContent = fmtUsd(mc);
+              document.getElementById('mcPill').style.display = 'inline-flex';
+            }
+          })
+          .catch(() => {});
+      }
     }
 
     // watch banner
